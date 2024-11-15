@@ -20,28 +20,28 @@ namespace GenerateReportsApi.Controllers
             _context = context;
         }
 
-        [HttpGet("generateReport")]
-        public IActionResult GenerateReport(string category, string employeeId, string period, string month = null, string quarter = null, int? year = null, DateTime? fromDate = null, DateTime? toDate = null)
+        [HttpPost("generateReport")]
+        public IActionResult GenerateReport([FromBody] ReportRequest request)
         {
             IQueryable<object> query;
 
             // Select the appropriate table and filter by employee reference
-            switch (category.ToLower())
+            switch (request.Category.ToLower())
             {
                 case "webinars":
                     var webinarQuery = _context.ReportWebinar.AsQueryable();
-                    if (!string.IsNullOrEmpty(employeeId))
+                    if (request.EmployeeIds != null && request.EmployeeIds.Any())
                     {
-                        webinarQuery = webinarQuery.Where(w => w.SpeakerId == employeeId);
+                        webinarQuery = webinarQuery.Where(w => request.EmployeeIds.Contains(w.SpeakerId));
                     }
                     query = webinarQuery.Cast<object>();
                     break;
 
                 case "blogs":
                     var blogQuery = _context.ReportBlog.AsQueryable();
-                    if (!string.IsNullOrEmpty(employeeId))
+                    if (request.EmployeeIds != null && request.EmployeeIds.Any())
                     {
-                        blogQuery = blogQuery.Where(b => b.AuthorId == employeeId);
+                        blogQuery = blogQuery.Where(b => request.EmployeeIds.Contains(b.AuthorId));
                     }
                     query = blogQuery.Cast<object>();
                     break;
@@ -52,38 +52,33 @@ namespace GenerateReportsApi.Controllers
             }
 
             // Apply date filters based on the period type
-            if (year.HasValue)
+            if (request.Year.HasValue)
             {
-                // Step 1: Filter by year only if period is "yearly"
-                if (period == "yearly")
+                if (request.Period == "yearly")
                 {
-                    query = query.Where(w => EF.Property<DateTime>(w, "CreatedDate").Year == year.Value);
+                    query = query.Where(w => EF.Property<DateTime>(w, "CreatedDate").Year == request.Year.Value);
                 }
-                // Step 2: Filter by year and quarter if period is "quarterly" and quarter is provided
-                else if (period == "quarterly" && quarter != null)
+                else if (request.Period == "quarterly" && request.Quarter != null)
                 {
-                    var quarterMonths = GetQuarterMonths(quarter);
+                    var quarterMonths = GetQuarterMonths(request.Quarter);
                     query = query.Where(w => quarterMonths.Contains(EF.Property<DateTime>(w, "CreatedDate").Month) &&
-                                             EF.Property<DateTime>(w, "CreatedDate").Year == year.Value);
+                                             EF.Property<DateTime>(w, "CreatedDate").Year == request.Year.Value);
                 }
-                // Step 3: Filter by year, quarter, and month if period is "monthly" and month is provided
-                else if (period == "monthly" && month != null)
+                else if (request.Period == "monthly" && request.Month != null)
                 {
-                    int? monthNumber = GetMonthNumber(month);
+                    int? monthNumber = GetMonthNumber(request.Month);
                     if (!monthNumber.HasValue)
                     {
                         return BadRequest("Invalid month name.");
                     }
                     query = query.Where(w => EF.Property<DateTime>(w, "CreatedDate").Month == monthNumber.Value &&
-                                             EF.Property<DateTime>(w, "CreatedDate").Year == year.Value);
+                                             EF.Property<DateTime>(w, "CreatedDate").Year == request.Year.Value);
                 }
             }
-
-            // Step 4: Filter by specific date range if period is "specificDates" and both dates are provided
-            else if (period == "specificDates" && fromDate.HasValue && toDate.HasValue)
+            else if (request.Period == "specificDates" && request.FromDate.HasValue && request.ToDate.HasValue)
             {
-                query = query.Where(w => EF.Property<DateTime>(w, "CreatedDate") >= fromDate.Value &&
-                                         EF.Property<DateTime>(w, "CreatedDate") <= toDate.Value);
+                query = query.Where(w => EF.Property<DateTime>(w, "CreatedDate") >= request.FromDate.Value &&
+                                         EF.Property<DateTime>(w, "CreatedDate") <= request.ToDate.Value);
             }
 
             // Execute query and map results to the desired output format
@@ -92,13 +87,14 @@ namespace GenerateReportsApi.Controllers
                 {
                     Id = EF.Property<string>(w, "Id"),
                     Title = EF.Property<string>(w, "Title"),
-                    ReferenceName = GetReferenceName(category, w),
+                    ReferenceName = GetReferenceName(request.Category, w),
                     CreatedDate = EF.Property<DateTime>(w, "CreatedDate")
                 })
                 .ToList();
 
             return Ok(reports);
         }
+
 
         // Helper method to convert month name to month number
         private int? GetMonthNumber(string month)
@@ -142,7 +138,7 @@ namespace GenerateReportsApi.Controllers
             {
                 case "webinars":
                     var webinar = w as Webinars;
-                    return webinar?.SpeakerId?? "No reference";
+                    return webinar?.SpeakerId ?? "No reference";
                 case "blogs":
                     var blog = w as Blogs;
                     return blog?.AuthorId ?? "No reference";
