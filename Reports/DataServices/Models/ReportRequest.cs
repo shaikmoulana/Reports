@@ -8,7 +8,7 @@ namespace DataServices.Models
 {
     public class ReportRequest
     {
-        public string Category { get; set; }
+        public List<string> Categories { get; set; }
         public List<string>? EmployeeIds { get; set; }
         public string Period { get; set; }
         public string? Month { get; set; }
